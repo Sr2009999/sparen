@@ -57,7 +57,7 @@ dialog::backdrop{background:#0008}
 .empty{text-align:center;color:var(--mut);padding:26px 10px}
 .tip{display:flex;gap:12px;margin-bottom:14px}.tip span{font-size:24px}
 .tip b{display:block}
-.hide{display:none}
+.hide{display:none}.card:not(.hero) small{color:var(--mut)}
 :focus-visible{outline:3px solid var(--y);outline-offset:2px}
 </style>
 </head>
@@ -80,11 +80,12 @@ dialog::backdrop{background:#0008}
 
 <script>
 const KEY="spaarpot-v1";
-const EXP={Eten:["🍕","need"],Boodschappen:["🛒","need"],Vervoer:["🚲","need"],School:["📚","need"],Kleren:["👕","want"],Uitgaan:["🎉","want"],Abonnementen:["📱","want"],Games:["🎮","want"],Overig:["🧾","want"],Sparen:["🐷","save"]};
+const EXP={Eten:["🍕","need"],Boodschappen:["🛒","need"],Vervoer:["🚲","need"],School:["📚","need"],Kleren:["👕","want"],Uitgaan:["🎉","want"],Snacks:["🍫","want"],Abonnementen:["📱","want"],Games:["🎮","want"],Overig:["🧾","want"],Sparen:["🐷","save"]};
 const INC={Salaris:"💼",Bijbaan:"🧑‍🍳",Zakgeld:"🎁",Overig:"💶"};
 const NAMES={need:"Nodig",want:"Leuk",save:"Sparen"};
-const DEF={tx:[],goals:[]};
+const DEF={tx:[],goals:[],start:0};
 let S;try{S=JSON.parse(localStorage.getItem(KEY))||DEF}catch(e){S=DEF}
+if(typeof S.start!="number")S.start=0;
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 const $=s=>document.querySelector(s);
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -95,6 +96,9 @@ const mName=m=>{const[y,mo]=m.split("-");return new Date(y,mo-1,1).toLocaleDateS
 const shift=d=>{let[y,m]=month.split("-").map(Number);m+=d;if(m<1){m=12;y--}if(m>12){m=1;y++}month=y+"-"+String(m).padStart(2,"0");render()};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
+const net=()=>S.tx.reduce((a,x)=>a+(x.t=="i"?x.a:-x.a),0);
+const balance=()=>S.start+net();
+const goalSaved=o=>o.link?Math.max(balance(),0):o.log.reduce((a,l)=>a+l.a,0);
 function calc(){
  const t=S.tx.filter(x=>x.d.startsWith(month));
  const inc=t.filter(x=>x.t=="i").reduce((a,x)=>a+x.a,0);
@@ -122,7 +126,16 @@ function txRow(x){
 function home(){
  const c=calc();
  const rate=c.inc>0?Math.round((c.g.save/c.inc)*100):0;
- let h=`<div class="card hero"><small>Over deze maand</small><div class="big">${eur(c.left)}</div>
+ const bal=balance(),main=S.goals.find(o=>o.link)||S.goals[0];
+ let h=`<div class="card hero"><div class="row"><small>Op je rekening</small><button class="sm" data-bal="1" style="color:#fff;border-color:#fff9">Saldo aanpassen</button></div><div class="big">${eur(bal)}</div>`;
+ if(main){
+  const sv=goalSaved(main),rest=main.target-sv,pp=Math.min(sv/main.target*100,100);
+  let msg;
+  if(rest>0){msg=`Doel ${esc(main.name)}: je hebt nog ${eur(rest)} erbij nodig.`;if(main.date)msg+=` Dat is ${eur(rest/monthsLeft(main.date))} per maand.`}
+  else msg=`Doel ${esc(main.name)} gehaald! 🎉`+(main.link&&rest<0?` Je kunt nog ${eur(-rest)} uitgeven en houdt genoeg over.`:"");
+  h+=`<div class="bar y" style="background:#ffffff33"><i style="width:${pp}%"></i></div><small>${msg}</small>`;
+ }else h+=`<small>${S.tx.length?"Maak een spaardoel om je voortgang te zien.":"Tik op Saldo aanpassen en vul in hoeveel je nu hebt."}</small>`;
+ h+=`</div><div class="card"><div class="row"><b>Deze maand</b><span class="mut">over: ${eur(c.left)}</span></div>
  <div class="sp"><div><small>Inkomsten</small><b>${eur(c.inc)}</b></div><div><small>Uitgaven</small><b>${eur(c.spent)}</b></div><div><small>Gespaard</small><b>${eur(c.g.save)}</b></div><div><small>Spaarquote</small><b>${rate}%</b></div></div></div>`;
  h+=`<h2>50/30/20-check</h2><div class="card">${bar("Nodig (50%)",c.g.need,c.inc*.5,"need")}${bar("Leuk (30%)",c.g.want,c.inc*.3,"want")}${bar("Sparen (20%)",c.g.save,c.inc*.2,"save")}<div class="mut">Nodig = eten, vervoer, school. Leuk = kleren, uitgaan, abonnementen.</div></div>`;
  const cats=Object.entries(c.byCat).sort((a,b)=>b[1]-a[1]);
@@ -130,8 +143,6 @@ function home(){
  if(!cats.length)h+=`<div class="empty">Nog geen uitgaven deze maand.<br>Tik op + om er een toe te voegen.</div>`;
  else cats.forEach(([k,v])=>{h+=`<div style="margin-bottom:10px"><div class="row"><span>${EXP[k][0]} ${k}</span><b>${eur(v)}</b></div><div class="bar ${EXP[k][1]=="want"?"y":""}"><i style="width:${v/c.spent*100}%"></i></div></div>`});
  h+=`</div>`;
- const top=S.goals[0];
- if(top){const s=top.log.reduce((a,l)=>a+l.a,0);h+=`<h2>Je doel</h2><div class="card"><div class="row"><b>${esc(top.name)}</b><span class="mut">${Math.round(Math.min(s/top.target,1)*100)}%</span></div><div class="bar y"><i style="width:${Math.min(s/top.target*100,100)}%"></i></div><div class="mut">${eur(s)} van ${eur(top.target)}</div></div>`}
  return h;
 }
 
@@ -147,18 +158,19 @@ function goals(){
  let h=`<h2>Spaardoelen</h2>`;
  if(!S.goals.length)h+=`<div class="card empty">Nog geen doel. Wat wil je kopen of waar spaar je voor?</div>`;
  S.goals.forEach(o=>{
-  const s=o.log.reduce((a,l)=>a+l.a,0),p=Math.min(s/o.target*100,100),rest=Math.max(o.target-s,0);
+  const s=goalSaved(o),p=Math.min(s/o.target*100,100),rest=Math.max(o.target-s,0);
   let extra="";
   if(rest==0)extra="Gehaald! 🎉";
   else if(o.date){const m=monthsLeft(o.date);extra=`Nog ${eur(rest)}. Spaar ${eur(rest/m)} per maand om ${new Date(o.date).toLocaleDateString("nl-NL",{day:"numeric",month:"long",year:"numeric"})} te halen.`}
   else extra=`Nog ${eur(rest)} te gaan.`;
   h+=`<div class="card"><div class="row"><b style="font-size:18px">🎯 ${esc(o.name)}</b><button class="x" data-dg="${o.id}" aria-label="Verwijder doel">✕</button></div>
   <div class="row mut"><span>${eur(s)}</span><span>${eur(o.target)}</span></div><div class="bar y" style="height:16px"><i style="width:${p}%"></i></div>
-  <div class="mut" style="margin-bottom:12px">${extra}</div><button class="sm" data-dep="${o.id}">+ Geld inleggen</button></div>`;
+  <div class="mut" style="margin-bottom:12px">${extra}</div>${o.link?`<span class="pill">Gekoppeld aan je saldo</span>`:`<button class="sm" data-dep="${o.id}">+ Geld inleggen</button>`}</div>`;
  });
  h+=`<h2>Nieuw doel</h2><div class="card"><form id="gf"><label for="gn">Waarvoor spaar je?</label><input id="gn" required maxlength="40" placeholder="Bijv. nieuwe laptop">
  <label for="gt">Bedrag (€)</label><input id="gt" type="number" inputmode="decimal" min="1" step="0.01" required>
  <label for="gd">Deadline (optioneel)</label><input id="gd" type="date" min="${today()}">
+ <label style="display:flex;gap:10px;align-items:center"><input id="gl" type="checkbox" style="width:auto" ${S.goals.some(o=>o.link)?"":"checked"}> Koppel aan mijn saldo</label><div class="mut">Dan telt het geld op je rekening automatisch mee voor dit doel.</div>
  <button class="pr" type="submit">Doel toevoegen</button></form></div>`;
  return h;
 }
@@ -199,6 +211,7 @@ document.addEventListener("click",e=>{
  else if(t.dataset.del){S.tx=S.tx.filter(x=>x.id!=t.dataset.del);save();render()}
  else if(t.dataset.dg){if(confirm("Dit doel verwijderen?")){S.goals=S.goals.filter(o=>o.id!=t.dataset.dg);save();render()}}
  else if(t.dataset.dep){const o=S.goals.find(g=>g.id==t.dataset.dep);const v=parseFloat((prompt("Hoeveel wil je inleggen? (€)")||"").replace(",","."));if(v>0){o.log.push({d:today(),a:v});save();render()}}
+ else if(t.dataset.bal){const v=parseFloat((prompt("Hoeveel staat er nu op je rekening? (€)",balance().toFixed(2))||"").replace(",","."));if(!isNaN(v)){S.start=v-net();save();render()}}
  else if(t.id=="fab")openDlg();
  else if(t.id=="cl")$("#dlg").close();
  else if(t.closest("#tt")){type=t.dataset.v;document.querySelectorAll("#tt button").forEach(b=>b.classList.toggle("on",b===t));fillCats()}
@@ -212,7 +225,7 @@ document.addEventListener("submit",e=>{
   S.tx.push({id:uid(),t:type,a,c:$("#cat").value,d:$("#dt").value,n:$("#nt").value.trim()});
   save();month=$("#dt").value.slice(0,7);$("#dlg").close();render();
  }else if(e.target.id=="gf"){
-  S.goals.push({id:uid(),name:$("#gn").value.trim(),target:parseFloat($("#gt").value),date:$("#gd").value||"",log:[]});
+  S.goals.push({id:uid(),name:$("#gn").value.trim(),target:parseFloat($("#gt").value),date:$("#gd").value||"",log:[],link:$("#gl").checked});
   save();render();
  }
 });
